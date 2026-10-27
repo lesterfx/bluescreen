@@ -167,8 +167,19 @@
       // Made extra tall on purpose: with the keyboard up, iOS's bottom edge sits below the page's
       // own bottom, and a strip there would otherwise show the screen color through the keyboard
       ? 'display:block;background:' + keyboardGray() + ';top:' + Math.round(v.y + H) + 'px;bottom:auto;height:' +
-        Math.max(screen.height || 0, screen.width || 0, window.innerHeight) + 'px'
+        (Math.max(screen.height || 0, screen.width || 0, window.innerHeight) + 2000) + 'px'
       : '';
+    // The fixed layer above can't paint past the page's own bottom edge, so the strip below it (the
+    // keyboard's non-touch area) still showed the screen color. The page background covers that area,
+    // so it gets a tall image: screen color down to the keyboard, keyboard gray from there on, far past
+    // the bottom of the screen. The background color itself stays the screen color for the status bar tint.
+    if (kbMode) {
+      var splitY = Math.round(v.y + H), gray = keyboardGray(), st = document.documentElement.style;
+      st.backgroundImage = 'linear-gradient(to bottom,' + bg + ' ' + splitY + 'px,' + gray + ' ' + splitY + 'px)';
+      st.backgroundRepeat = 'no-repeat';
+      st.backgroundSize = '100% ' + (splitY + 4000) + 'px';
+      st.backgroundPosition = '0 0';
+    }
 
     // Marker size follows the full screen so dots don't shrink when the keyboard opens
     var de = document.documentElement;
