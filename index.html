@@ -82,6 +82,7 @@
   <span id="kbWrap" hidden><button id="kb" type="button">Keyboard mode</button></span>
   <span id="touchHint" class="sub" hidden>Hold 2 fingers for 2s to show settings</span>
   <button id="reset" type="button">Reset</button>
+  <span id="ver" class="sub" title="Page version">v1.1</span>
 </div>
 
 <script>
@@ -155,11 +156,16 @@
   function render() {
     var v = viewport(), W = v.w, H = v.h;
     var bg = scaled(s.bg, s.bright), mk = scaled(mix(s.mk, s.bg, s.opacity / 100), s.bright);
-    // The page background must stay the screen color: Safari on iOS 26 tints the status bar from it.
-    document.documentElement.style.background = bg;
-    document.body.style.background = bg;
+    // Normally the page background is the screen color: Safari on iOS 26 tints the status bar from it.
+    // In keyboard mode the page background is keyboard gray instead. Whatever iOS shows outside the
+    // page's own bottom edge (the keyboard's non-touch area) uses that background color, and no layer
+    // of ours can paint there, so it has to be gray. The stage then paints the screen color over the
+    // visible area above the keyboard, including under the status bar.
+    var pageBg = kbMode ? keyboardGray() : bg;
+    document.documentElement.style.background = pageBg;
+    document.body.style.background = pageBg;
     stage.style.cssText = kbMode
-      ? 'left:' + v.x + 'px;top:' + v.y + 'px;width:' + W + 'px;height:' + H + 'px;right:auto;bottom:auto'
+      ? 'left:' + v.x + 'px;top:' + v.y + 'px;width:' + W + 'px;height:' + H + 'px;right:auto;bottom:auto;background:' + bg
       : '';
     // In keyboard mode, a separate gray layer sits behind the see-through keyboard and its toolbar,
     // so the keyboard looks normal instead of tinted blue
@@ -169,17 +175,6 @@
       ? 'display:block;background:' + keyboardGray() + ';top:' + Math.round(v.y + H) + 'px;bottom:auto;height:' +
         (Math.max(screen.height || 0, screen.width || 0, window.innerHeight) + 2000) + 'px'
       : '';
-    // The fixed layer above can't paint past the page's own bottom edge, so the strip below it (the
-    // keyboard's non-touch area) still showed the screen color. The page background covers that area,
-    // so it gets a tall image: screen color down to the keyboard, keyboard gray from there on, far past
-    // the bottom of the screen. The background color itself stays the screen color for the status bar tint.
-    if (kbMode) {
-      var splitY = Math.round(v.y + H), gray = keyboardGray(), st = document.documentElement.style;
-      st.backgroundImage = 'linear-gradient(to bottom,' + bg + ' ' + splitY + 'px,' + gray + ' ' + splitY + 'px)';
-      st.backgroundRepeat = 'no-repeat';
-      st.backgroundSize = '100% ' + (splitY + 4000) + 'px';
-      st.backgroundPosition = '0 0';
-    }
 
     // Marker size follows the full screen so dots don't shrink when the keyboard opens
     var de = document.documentElement;
