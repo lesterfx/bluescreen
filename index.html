@@ -19,6 +19,7 @@
   body.idle, body.idle * { cursor: none !important; }
   #stage { position: fixed; inset: 0; }
   #safeTop { position: fixed; top: 0; left: 0; width: 0; height: env(safe-area-inset-top, 0px); visibility: hidden; pointer-events: none; }
+  #topTint { position: fixed; top: 0; left: 0; right: 0; height: max(20px, env(safe-area-inset-top, 0px)); pointer-events: none; }
   #kbFill { display: none; position: fixed; left: 0; right: 0; bottom: 0; }
   .dot { position: absolute; border-radius: 50%; }
 
@@ -63,6 +64,7 @@
 <div id="stage"></div>
 <div id="kbFill"></div>
 <div id="safeTop" aria-hidden="true"></div>
+<div id="topTint" aria-hidden="true"></div>
 <textarea id="kbInput" tabindex="-1" aria-hidden="true" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"></textarea>
 
 <div id="panel" role="toolbar" aria-label="Display settings">
@@ -142,28 +144,44 @@
   }
 
   // Height of the status bar area at the top (0 in landscape, or where the page doesn't reach under it)
-  var safeProbe = $('safeTop');
+  var safeProbe = $('safeTop'), topTint = $('topTint');
   function statusBarHeight() { return safeProbe.offsetHeight || 0; }
 
   // The visible area: above the keyboard in keyboard mode, otherwise the whole window
+  // In keyboard mode the area seen while the keyboard is up is remembered, so the dots stay put
+  // when the keyboard is closed (the checkmark, app switch) until a tap brings it back.
+  // It's forgotten on rotation, since the keyboard is a different size then.
+  var kbArea = null, kbUp = false;
   function viewport() {
     var vv = window.visualViewport;
-    if (kbMode && vv) return { x: vv.offsetLeft, y: vv.offsetTop, w: vv.width, h: vv.height };
+    kbUp = false;
+    if (kbMode && vv) {
+      var cur = { x: vv.offsetLeft, y: vv.offsetTop, w: vv.width, h: vv.height };
+      var full = document.documentElement.clientHeight || window.innerHeight;
+      if (cur.h < full * 0.85) { kbArea = cur; kbUp = true; }
+      else if (kbArea && Math.abs(kbArea.w - cur.w) < 2) return { x: cur.x, y: cur.y, w: kbArea.w, h: kbArea.h };
+      return cur;
+    }
     return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
   }
 
   function render() {
     var v = viewport(), W = v.w, H = v.h;
     var bg = scaled(s.bg, s.bright), mk = scaled(mix(s.mk, s.bg, s.opacity / 100), s.bright);
-    // The page background must stay the screen color: Safari on iOS 26 tints the status bar from it.
-    document.documentElement.style.background = bg;
-    document.body.style.background = bg;
-    stage.style.cssText = kbMode
+    // iOS paints some edges itself using the page's base background color. In keyboard mode that
+    // base is keyboard gray, so the strip iOS paints at the very bottom (below anything the page can
+    // draw) matches the keyboard. The status bar is kept the screen color by the fixed blue strip
+    // across the top, which Safari on iOS 26+ uses to tint the status bar instead of the base color.
+    var base = kbUp ? keyboardGray() : bg;
+    document.documentElement.style.background = base;
+    document.body.style.background = base;
+    topTint.style.background = bg;
+    stage.style.cssText = 'background:' + bg + ';' + (kbMode
       ? 'left:' + v.x + 'px;top:' + v.y + 'px;width:' + W + 'px;height:' + H + 'px;right:auto;bottom:auto'
-      : '';
+      : '');
     // In keyboard mode, a separate gray layer sits behind the see-through keyboard and its toolbar,
     // so the keyboard looks normal instead of tinted blue
-    kbFill.style.cssText = kbMode
+    kbFill.style.cssText = kbUp
       // Made extra tall on purpose: with the keyboard up, iOS's bottom edge sits below the page's
       // own bottom, and a strip there would otherwise show the screen color through the keyboard
       ? 'display:block;background:' + keyboardGray() + ';top:' + Math.round(v.y + H) + 'px;bottom:auto;height:' +
@@ -178,8 +196,16 @@
     var T = Math.max(0, statusBarHeight() - v.y), AH = H - T;
     var mx = W * s.margin / 100, my = AH * s.margin / 100;
     var frag = document.createDocumentFragment();
-    for (var r = 0; r < s.rows; r++) {
-      var y = T + (s.rows === 1 ? AH / 2 : my + r * (AH - 2 * my) / (s.rows - 1));
+    var ys = [], step = s.rows > 1 ? (AH - 2 * my) / (s.rows - 1) : 0;
+    for (var r = 0; r < s.rows; r++) ys.push(T + (s.rows === 1 ? AH / 2 : my + r * step));
+    // Keyboard mode: extra rows at the same spacing continue down the rest of the screen. They sit
+    // under the gray keyboard layer while the keyboard is up and show once it's closed.
+    if (kbMode && step > 0) {
+      var bottom = (de.clientHeight || window.innerHeight) - v.y - my;
+      for (var ey = ys[ys.length - 1] + step; ey <= bottom; ey += step) ys.push(ey);
+    }
+    for (var r = 0; r < ys.length; r++) {
+      var y = ys[r];
       for (var c = 0; c < s.cols; c++) {
         var x = s.cols === 1 ? W / 2 : mx + c * (W - 2 * mx) / (s.cols - 1);
         var dot = document.createElement('div');
@@ -311,6 +337,7 @@
 
   function exitKb() {
     kbMode = false;
+    kbArea = null;
     cancelHold();
     try { localStorage.removeItem(KB_KEY); } catch (e) {}
     setPanelEnabled(true);
